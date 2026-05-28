@@ -1,93 +1,99 @@
-# Predictor de Supervivencia del Titanic
+# Comparador de Modelos ML — Titanic & Enfermedad de Carrión
 
-Pagina web que predice si un pasajero del Titanic habria sobrevivido,
-usando una red neuronal Keras entrenada con datos historicos.
+Página web que **compara una Red Neuronal y un Árbol de Decisión** sobre dos casos
+de clasificación binaria, usando para cada caso una única fuente de datos compartida
+por ambos modelos:
 
-**Curso:** Inteligencia Artificial — Sesion 6 — UNTELS 2026
+1. **Titanic** — ¿sobrevive el pasajero? (datos históricos del naufragio de 1912)
+2. **Enfermedad de Carrión** — ¿fase AGUDA o ERUPTIVA? (datos abiertos del MINSA, 2000–2024)
+
+**Curso:** Inteligencia Artificial / Sistemas Inteligentes — Sesión 9 — UNTELS 2026
 
 ---
 
-## Vista rapida
+## Vista rápida
 
-- **Frontend:** HTML + React 18 (CDN) + TensorFlow.js 4.20 + diseno propio
-- **Modelo:** Keras `Sequential(5 -> 32 -> 32 -> 1)`, Adam + binary cross-entropy, 400 epochs
-- **Entrenamiento:** Python 3.12 + `tf_keras` (TensorFlow 2.21)
-- **Hosting:** Vercel (static, sin backend)
-- **Background:** Video atmosferico generado con Higgsfield (Veo 3.1 Lite)
+- **Frontend:** HTML + React 18 (CDN) + TensorFlow.js 4.20 + Babel standalone
+- **Comparación lado a lado:** un solo formulario por caso; al enviar, RN y Árbol
+  predicen a la vez y se muestran juntos con su veredicto y confianza.
+- **Red Neuronal:** Keras `Sequential(5 → 32 → 32 → 1)`, Adam + binary cross-entropy,
+  400 epochs. En Carrión se normaliza (min-max) y se guarda `norm.json` para el navegador.
+- **Árbol de Decisión:** scikit-learn `DecisionTreeClassifier(criterion="entropy")`,
+  exportado a JSON y recorrido en el navegador con ~20 líneas de JS (sin dependencias).
+- **Hosting:** Vercel (estático, sin backend).
 
-## Como correrlo
+## Casos y datos
 
-Ver [`INSTRUCCIONES.md`](./INSTRUCCIONES.md) para el detalle completo. Resumen:
+| Caso | Fuente | Filas | Target | 5 features |
+|---|---|---|---|---|
+| Titanic | `titanic-train/test.csv` | 915 / 393 | Survived (0/1) | Fare, Pclass, Gender, Age, SibSp |
+| Carrión | MINSA `data/carrion_raw.csv` | 46,121 | AGUDA(0) / ERUPTIVA(1) | edad, sexo, departamento, año, semana |
+
+## Flujo de entrenamiento (genera los modelos de `public/models/`)
 
 ```powershell
-# 1. Una sola vez: instalar y parchar dependencias
-py -3.12 setup.py
+# 1. Una sola vez: instalar dependencias
+py -3.12 -m pip install -r requirements.txt
+py -3.12 -m pip install --no-deps tensorflowjs
 
-# 2. Una sola vez: entrenar el modelo (genera .h5 + TF.js)
-py -3.12 train_model.py
+# 2. Carrión: split + ambos modelos
+py -3.12 make_split.py            # data/carrion-train.csv + carrion-test.csv
+py -3.12 train_carrion_ad.py      # public/models/carrion/ad.json
+py -3.12 train_carrion_rn.py      # public/models/carrion/rn/ + norm.json
 
-# 3. Servir local
-python -m http.server --directory public 8000
-# abre http://localhost:8000
+# 3. Titanic: red neuronal (existente) + árbol nuevo
+py -3.12 train_model.py           # public/models/titanic/rn/  (RN, ya provista)
+py -3.12 train_titanic_ad.py      # public/models/titanic/ad.json
 
-# 4. Desplegar
-vercel --prod
+# 4. Verificar paridad web == Python y correr tests
+py -3.12 verificar_predicciones.py
+py -3.12 -m pytest -q
+node test_predict_tree.mjs
+```
+
+> Nota: `train_model.py` (RN del Titanic) escribe en `public/model/`. Tras ejecutarlo,
+> mover su salida a `public/models/titanic/rn/` (ver estructura abajo).
+
+## Servir y desplegar
+
+```powershell
+py -3.12 -m http.server --directory public 8123   # http://localhost:8123
+vercel --prod                                     # despliegue estático
 ```
 
 ## Estructura
 
 ```
-titanic-predictor/
-├── setup.py                    # Instala TF, tf-keras, tensorflowjs + parches
-├── train_model.py              # Entrena la red y convierte a TF.js
-├── verificar_predicciones.py   # Compara predicciones browser vs Python
-├── train_model.ipynb           # Alternativa: notebook para Colab
-├── requirements.txt
-├── titanic-train.csv           # 915 pasajeros (entrenamiento)
-├── titanic-test.csv            # 393 pasajeros (evaluacion)
-├── vercel.json / .vercelignore
-├── INSTRUCCIONES.md            # Guia detallada
-│
-├── mimodelo.json               # Modelo Keras (entregable)
-├── mimodelo.weights.h5         # Pesos Keras (entregable)
-│
-└── public/                     # Lo que despliega Vercel
-    ├── index.html              # UI completa con TF.js
-    ├── bg-ocean.mp4            # Video oceanico de fondo (6s, loop)
-    └── model/
-        ├── model.json          # Modelo en formato browser (mismos pesos del .h5)
-        └── group1-shard1of1.bin
+comparador-ml/
+├── carrion_preprocess.py        # limpieza/encoding compartido (RN y AD)
+├── make_split.py                # split estratificado de Carrión
+├── export_tree.py               # árbol sklearn -> JSON (+ recorrido de referencia)
+├── train_carrion_ad.py / _rn.py # entrenan y exportan los modelos de Carrión
+├── train_titanic_ad.py          # entrena y exporta el árbol del Titanic
+├── train_model.py               # RN del Titanic (de la Sesión 6)
+├── verificar_predicciones.py    # paridad web == sklearn (árboles)
+├── test_*.py / test_*.mjs       # tests (preprocesamiento, paridad)
+└── public/
+    ├── index.html               # SPA: tabs de caso + comparación lado a lado
+    └── models/
+        ├── titanic/{rn/, ad.json}
+        └── carrion/{rn/, ad.json, norm.json}
 ```
 
-## Como las predicciones vienen del `.h5`
+## Métricas de referencia (entrenamiento)
 
-```
-   train_model.py  (una vez)
-   ┌─────────────────────────────────┐
-   │ 1. Entrena Keras Sequential     │
-   │ 2. Guarda mimodelo.weights.h5   │
-   │ 3. Convierte a formato TF.js    │
-   └─────────────────────────────────┘
-              │
-              ▼
-   Browser  (cada visita)
-   ┌─────────────────────────────────┐
-   │ tf.loadLayersModel('model.json')│
-   │ model.predict(input) -> prob.   │
-   └─────────────────────────────────┘
-```
+| Caso | Modelo | Accuracy train | Accuracy test |
+|---|---|---|---|
+| Titanic | Árbol de Decisión | ~97% | ~74% |
+| Titanic | Red Neuronal | ~84% | ~76% |
+| Carrión | Árbol de Decisión | ~93% | ~67% |
+| Carrión | Red Neuronal | ~73% | ~73% |
 
-La conversion NO reentrena. El modelo en el navegador tiene los **mismos pesos**
-que el `.h5` entregado al profesor.
+En Carrión la Red Neuronal generaliza de forma estable (train ≈ test), mientras que
+el Árbol memoriza el entrenamiento (overfitting). Esta diferencia es el eje de la
+comparativa del informe.
 
-## Metricas
+## Notebooks entregables
 
-| Metrica | Valor |
-|---|---|
-| Accuracy en `titanic-train.csv` | ~83-85% |
-| Accuracy en `titanic-test.csv`  | ~76-78% |
-| Referencia del notebook         | 84.26% |
-
-Las pequenas diferencias vs el notebook son por inicializacion aleatoria de pesos
-y diferencias entre Keras 2 y Keras 3 — la arquitectura, algoritmo y datos son
-identicos.
+En la carpeta superior (`Sesion8/`): `Carrion_RN.ipynb` y `Carrion_AD.ipynb`,
+que entrenan cada modelo y muestran accuracy, matriz de confusión y métricas.

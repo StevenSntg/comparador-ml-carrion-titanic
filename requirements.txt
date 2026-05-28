@@ -11,5 +11,9 @@
 #
 tensorflow>=2.16
 tensorflow-hub
+tf-keras
+scikit-learn>=1.3
 pandas>=2.0
 numpy>=1.26,<2.0
+jupyter
+pytest
