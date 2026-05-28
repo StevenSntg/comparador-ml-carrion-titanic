@@ -1280,6 +1280,12 @@
         }}>
           {pct}<span style={{ fontSize: 22, color: accent, marginLeft: 2 }}>%</span>
         </div>
+        <div className="mono" style={{
+          fontSize: 10.5, color: 'var(--muted)', marginTop: 2,
+          letterSpacing: '.14em', textTransform: 'uppercase'
+        }}>
+          confianza en {etiqueta}
+        </div>
       </div>
     );
   }
@@ -1301,7 +1307,9 @@
     const lblTree = cfg.classLabels[tree.pred];
     const coincide = nn.pred === tree.pred;
     const accent = caseKey === "titanic" ? "var(--brass)" : "var(--accent-carrion)";
-    const posLabel = cfg.classLabels[cfg.positiveIdx];
+    // Confianza = probabilidad de la CLASE PREDICHA (no siempre la clase positiva).
+    const confNN = nn.pred === 1 ? nn.prob : 1 - nn.prob;
+    const confTree = tree.pred === 1 ? tree.prob : 1 - tree.prob;
 
     const resumen = caseKey === "titanic"
       ? `${input.sex === 1 ? 'Mujer' : 'Hombre'}, ${input.age} años · clase ${input.pclass} · £${input.fare}`
@@ -1327,11 +1335,11 @@
 
         <div className="stagger-3" style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}>
           <ModelCard titulo="Red Neuronal"
-                     subtitulo={`Keras 5→32→32→1 · P(${posLabel})`}
-                     etiqueta={lblNN} prob={nn.prob} accent="var(--brass)" />
+                     subtitulo="Keras · 5→32→32→1"
+                     etiqueta={lblNN} prob={confNN} accent="var(--brass)" />
           <ModelCard titulo="Árbol de Decisión"
-                     subtitulo={`sklearn (entropía) · P(${posLabel})`}
-                     etiqueta={lblTree} prob={tree.prob} accent="var(--safe)" />
+                     subtitulo="sklearn · entropía"
+                     etiqueta={lblTree} prob={confTree} accent="var(--safe)" />
         </div>
 
         <div className="card stagger-4" style={{
