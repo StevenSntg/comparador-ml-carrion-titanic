@@ -1,0 +1,15 @@
+# Dependencias para entrenar el modelo local (Python 3.10 - 3.13).
+# TensorFlow aun NO soporta Python 3.14.
+#
+# Instalar en DOS pasos (ver INSTRUCCIONES.md):
+#   py -3.12 -m pip install -r requirements.txt
+#   py -3.12 -m pip install --no-deps tensorflowjs
+#
+# Nota: tensorflowjs se instala con --no-deps porque su dependencia
+# tensorflow-decision-forests==1.8.1 fija TensorFlow a 2.15.x y entra en conflicto.
+# Nosotros solo necesitamos el convertidor de Keras de tensorflowjs, no TFDF.
+#
+tensorflow>=2.16
+tensorflow-hub
+pandas>=2.0
+numpy>=1.26,<2.0

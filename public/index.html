@@ -1,0 +1,1431 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>R.M.S. Titanic — Predictor de Supervivencia</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23131a25'/%3E%3Cpath d='M16 7l2 2-2 2-2-2zM16 13l3 3-3 3-3-3zM16 21l2 2-2 2-2-2z' fill='%23d4a04a'/%3E%3C/svg%3E" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400;1,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+
+<style>
+  :root{
+    /* Palette — OKLCH, tuned for higher readability on dark video bg */
+    --bg:         oklch(14% 0.025 245);
+    --bg-deep:    oklch(8%  0.018 245);
+    --panel:      oklch(20% 0.020 245);
+    --panel-2:    oklch(24% 0.020 245);
+    --line:       oklch(40% 0.025 245);
+    --line-soft:  oklch(32% 0.022 245);
+    --line-faint: oklch(24% 0.018 245);
+    --brass:      oklch(82% 0.12 78);
+    --brass-2:    oklch(72% 0.12 75);
+    --brass-dim:  oklch(60% 0.085 75);
+    --brass-deep: oklch(44% 0.05  75);
+    --cream:      oklch(97% 0.020 82);
+    --cream-mute: oklch(91% 0.018 82);  /* much brighter for body */
+    --muted:      oklch(74% 0.015 82);  /* brighter for hints */
+    --danger:     oklch(62% 0.17 28);
+    --danger-2:   oklch(72% 0.15 28);
+    --safe:       oklch(72% 0.13 155);
+
+    /* Typography */
+    --serif: 'Cormorant Garamond', 'Times New Roman', serif;
+    --sans:  'Inter', system-ui, -apple-system, sans-serif;
+    --mono:  'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+    /* Easing curves */
+    --ease-out-expo:  cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+    --ease-in-out:    cubic-bezier(0.77, 0, 0.175, 1);
+    --ease-spring:    cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  *,*::before,*::after{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    font-family: var(--sans);
+    color: var(--cream);
+    background: var(--bg-deep);
+    min-height: 100dvh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+    font-feature-settings: "ss01", "cv11", "kern";
+  }
+
+  /* ─── Background video layers ─────────────────────────────────────────
+     - Two stacked dual-instance pairs for seamless crossfade
+     - One pair NORMAL on the left half, one pair MIRRORED on the right half
+     - Together they create a symmetric, fully-lit ocean across the viewport
+  ─────────────────────────────────────────────────────────────────────── */
+  .bg-video{
+    position: fixed; top: 0; bottom: 0;
+    width: 50vw; height: 100%;
+    object-fit: cover;
+    z-index: -2;
+    filter: brightness(0.95) saturate(1.12) contrast(1.06);
+    pointer-events: none;
+    transition: opacity 1.4s ease-in-out;
+    will-change: opacity;
+  }
+  .bg-video.left  { left: 0; }
+  .bg-video.right { left: 50vw; transform: scaleX(-1); }
+  .bg-video.fade-out{ opacity: 0; }
+  /* Soft blend at the centerline so the mirrored seam disappears */
+  .bg-seam{
+    position: fixed; top: 0; bottom: 0; left: 50vw;
+    width: 120px; transform: translateX(-50%);
+    z-index: -1; pointer-events: none;
+    background: linear-gradient(90deg,
+      transparent 0%,
+      oklch(10% 0.02 245 / 0.35) 50%,
+      transparent 100%);
+    filter: blur(20px);
+  }
+
+  /* ─── Overlay layers (depth + readability) ───────────────────────────── */
+  .stage{
+    position: relative;
+    min-height: 100dvh;
+    isolation: isolate;
+  }
+  /* Lighter gradient overlay so the video can breathe */
+  .stage::before{
+    content: ""; position: fixed; inset: 0;
+    background:
+      linear-gradient(180deg,
+        oklch(10% 0.02 245 / 0.32) 0%,
+        oklch(8% 0.018 245 / 0.12) 38%,
+        oklch(6% 0.015 248 / 0.40) 100%);
+    z-index: -1;
+    pointer-events: none;
+  }
+  /* Soft vignette — much weaker on the sides */
+  .stage::after{
+    content: ""; position: fixed; inset: 0;
+    background: radial-gradient(ellipse 130% 100% at 50% 50%,
+      transparent 55%,
+      oklch(4% 0.015 248 / 0.45) 100%);
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  #root{ position: relative; z-index: 2; }
+
+  /* ─── Compass rose (very slow rotation) ─────────────────────────────── */
+  .compass{
+    position: absolute; top: -40px; left: 50%;
+    width: 520px; height: 520px;
+    transform: translateX(-50%);
+    pointer-events: none;
+    opacity: .075;
+    z-index: 0;
+    animation: compass-rotate 240s linear infinite;
+    color: var(--brass);
+  }
+  @keyframes compass-rotate{
+    from{ transform: translateX(-50%) rotate(0deg); }
+    to  { transform: translateX(-50%) rotate(360deg); }
+  }
+
+  /* ─── Typography utilities ───────────────────────────────────────────── */
+  .serif{ font-family: var(--serif); font-weight: 500; letter-spacing: .005em; }
+  .mono{ font-family: var(--mono); }
+  .eyebrow{
+    font-family: var(--mono);
+    font-size: 12px; font-weight: 500;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: var(--brass);
+  }
+  .rule{
+    display: flex; align-items: center; gap: 14px;
+    color: var(--brass-dim);
+  }
+  .rule::before, .rule::after{
+    content: ""; flex: 1; height: 1px;
+    background: linear-gradient(90deg,
+      transparent, var(--brass-dim), transparent);
+  }
+  .rule .diamond{
+    width: 6px; height: 6px;
+    transform: rotate(45deg);
+    background: var(--brass);
+    border: 1px solid var(--brass-2);
+  }
+
+  /* ─── Buttons ──────────────────────────────────────────────────────── */
+  .btn{
+    appearance: none;
+    border: 1px solid var(--brass-2);
+    background: linear-gradient(180deg,
+      oklch(80% 0.115 78), oklch(68% 0.115 76));
+    color: oklch(14% 0.02 80);
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    padding: 14px 28px;
+    cursor: pointer;
+    transition:
+      transform 180ms var(--ease-out-quart),
+      box-shadow 220ms var(--ease-out-expo),
+      filter 200ms ease,
+      opacity 180ms ease;
+    box-shadow:
+      0 1px 0 oklch(96% 0.05 85 / .45) inset,
+      0 8px 24px oklch(40% 0.08 75 / .35);
+    will-change: transform;
+  }
+  .btn:hover{
+    filter: brightness(1.08);
+    box-shadow:
+      0 1px 0 oklch(96% 0.05 85 / .55) inset,
+      0 14px 36px oklch(50% 0.1 75 / .45);
+  }
+  .btn:active{
+    transform: translateY(1px) scale(0.985);
+    box-shadow:
+      0 1px 0 oklch(95% 0.05 85 / .3) inset,
+      0 4px 12px oklch(40% 0.08 75 / .25);
+    transition-duration: 80ms;
+  }
+  .btn:focus-visible{
+    outline: none;
+    box-shadow:
+      0 1px 0 oklch(96% 0.05 85 / .5) inset,
+      0 0 0 2px var(--bg-deep),
+      0 0 0 4px var(--brass),
+      0 14px 36px oklch(50% 0.1 75 / .45);
+  }
+  .btn[disabled]{ opacity: .4; cursor: not-allowed; filter: none; box-shadow: none; }
+  .btn[disabled]:hover{ filter: none; }
+  .btn.ghost{
+    background: transparent;
+    color: var(--cream-mute);
+    border: 1px solid var(--line);
+    box-shadow: none;
+  }
+  .btn.ghost:hover{
+    color: var(--cream);
+    border-color: var(--brass-dim);
+    background: oklch(20% 0.02 245 / .5);
+    filter: none;
+  }
+  .btn.ghost:focus-visible{
+    box-shadow:
+      0 0 0 2px var(--bg-deep),
+      0 0 0 4px var(--brass-dim);
+  }
+
+  /* ─── Card ─────────────────────────────────────────────────────────── */
+  .card{
+    position: relative;
+    background:
+      linear-gradient(180deg,
+        oklch(18% 0.020 245 / 0.92),
+        oklch(15% 0.018 245 / 0.95));
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    box-shadow:
+      0 1px 0 oklch(100% 0 0 / .04) inset,
+      0 30px 80px oklch(0% 0 0 / .65),
+      0 0 0 1px oklch(0% 0 0 / .30);
+  }
+  .card .corners{ position: absolute; inset: 0; pointer-events: none; }
+  .card .corners > span{
+    position: absolute; width: 18px; height: 18px;
+    border: 1px solid var(--brass-dim);
+  }
+  .card .corners .tl{ top:10px; left:10px;  border-right:0; border-bottom:0; }
+  .card .corners .tr{ top:10px; right:10px; border-left:0;  border-bottom:0; }
+  .card .corners .bl{ bottom:10px; left:10px; border-right:0; border-top:0; }
+  .card .corners .br{ bottom:10px; right:10px; border-left:0; border-top:0; }
+
+  /* ─── Form fields ─────────────────────────────────────────────────── */
+  .field{ display: flex; flex-direction: column; gap: 10px; }
+  .field label{
+    font-family: var(--mono);
+    font-size: 12px; font-weight: 500;
+    letter-spacing: .16em; text-transform: uppercase;
+    color: var(--cream-mute); opacity: 1;
+  }
+  .field label .live-value{
+    color: var(--brass);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+
+  /* ─── Segmented selector ──────────────────────────────────────────── */
+  .seg{
+    display: grid; gap: 0;
+    grid-auto-flow: column; grid-auto-columns: 1fr;
+    background: oklch(11% 0.018 245 / 0.85);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    padding: 4px;
+    position: relative;
+  }
+  .seg button{
+    appearance: none;
+    background: transparent;
+    color: var(--cream-mute);
+    border: 0;
+    padding: 13px 8px;
+    cursor: pointer;
+    font-family: var(--serif);
+    font-size: 19px; font-weight: 600;
+    letter-spacing: .02em;
+    border-radius: 2px;
+    transition:
+      color 150ms var(--ease-out-quart),
+      background 200ms var(--ease-out-quart),
+      transform 120ms var(--ease-out-quart);
+    white-space: nowrap;
+    will-change: transform;
+  }
+  .seg button .sub{
+    display: block;
+    font-family: var(--mono);
+    font-size: 10.5px; font-weight: 500;
+    letter-spacing: .15em; text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 4px;
+    transition: color 150ms ease;
+  }
+  .seg button:hover{ color: var(--cream); }
+  .seg button:active{ transform: scale(0.97); }
+  .seg button[aria-pressed="true"]{
+    background: linear-gradient(180deg,
+      oklch(30% 0.04 245), oklch(22% 0.03 245));
+    color: var(--brass);
+    box-shadow:
+      0 0 0 1px var(--brass-dim) inset,
+      0 1px 0 oklch(40% 0.05 245 / .5) inset;
+  }
+  .seg button[aria-pressed="true"] .sub{ color: var(--brass-dim); }
+  .seg button:focus-visible{
+    outline: none;
+    box-shadow:
+      0 0 0 1px var(--brass-dim) inset,
+      0 0 0 2px var(--bg-deep),
+      0 0 0 4px oklch(78% 0.115 78 / .4);
+  }
+
+  /* ─── Stepper ────────────────────────────────────────────────────── */
+  .stepper{
+    display: flex; align-items: stretch;
+    height: 50px;
+    background: oklch(11% 0.018 245 / 0.85);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    transition: border-color 200ms ease;
+  }
+  .stepper:focus-within{ border-color: var(--brass-dim); }
+  .stepper button{
+    appearance: none;
+    background: transparent;
+    border: 0;
+    color: var(--cream-mute);
+    width: 48px;
+    cursor: pointer;
+    font-size: 20px;
+    font-family: var(--serif);
+    transition:
+      color 150ms var(--ease-out-quart),
+      background 180ms var(--ease-out-quart),
+      transform 100ms var(--ease-out-quart);
+    will-change: transform;
+  }
+  .stepper button:hover{
+    color: var(--brass);
+    background: oklch(16% 0.025 245);
+  }
+  .stepper button:active{
+    transform: scale(0.9);
+    background: oklch(20% 0.03 245);
+  }
+  .stepper button:focus-visible{
+    outline: none;
+    color: var(--brass);
+    box-shadow: inset 0 0 0 1px var(--brass-dim);
+  }
+  .stepper button:disabled{ opacity: .3; cursor: not-allowed; }
+  .stepper .val{
+    flex: 1;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--serif);
+    font-size: 24px; font-weight: 600;
+    color: var(--cream);
+    border-left: 1px solid var(--line-soft);
+    border-right: 1px solid var(--line-soft);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ─── Range slider ────────────────────────────────────────────────── */
+  .range{
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 36px;
+    background: transparent;
+    cursor: pointer;
+  }
+  .range::-webkit-slider-runnable-track{
+    height: 2px;
+    background: var(--line);
+    background-image: linear-gradient(90deg,
+      var(--brass) var(--pct, 0%),
+      var(--line) var(--pct, 0%));
+    border-radius: 2px;
+    transition: height 180ms var(--ease-out-quart);
+  }
+  .range::-webkit-slider-thumb{
+    -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--brass);
+    border: 2px solid oklch(18% 0.02 245);
+    margin-top: -8px;
+    box-shadow:
+      0 0 0 1px var(--brass-2),
+      0 0 14px oklch(72% 0.1 75 / .5);
+    transition:
+      width 180ms var(--ease-out-quart),
+      height 180ms var(--ease-out-quart),
+      margin-top 180ms var(--ease-out-quart),
+      box-shadow 220ms var(--ease-out-expo);
+  }
+  .range:hover::-webkit-slider-thumb,
+  .range:focus::-webkit-slider-thumb{
+    width: 22px; height: 22px;
+    margin-top: -11px;
+    box-shadow:
+      0 0 0 1px var(--brass-2),
+      0 0 26px oklch(78% 0.12 75 / .65);
+  }
+  .range:focus{ outline: none; }
+  .range:focus::-webkit-slider-runnable-track{
+    box-shadow: 0 0 0 1px var(--brass-dim);
+  }
+  .range::-moz-range-track{ height: 2px; background: var(--line); border-radius: 2px; }
+  .range::-moz-range-progress{ height: 2px; background: var(--brass); border-radius: 2px; }
+  .range::-moz-range-thumb{
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--brass);
+    border: 2px solid oklch(18% 0.02 245);
+    box-shadow:
+      0 0 0 1px var(--brass-2),
+      0 0 14px oklch(72% 0.1 75 / .5);
+    transition: all 180ms var(--ease-out-quart);
+  }
+  .range:hover::-moz-range-thumb,
+  .range:focus::-moz-range-thumb{
+    width: 22px; height: 22px;
+  }
+
+  /* ─── Animations ─────────────────────────────────────────────────── */
+  @keyframes fadeUp{
+    from{ opacity: 0; transform: translateY(14px); }
+    to  { opacity: 1; transform: none; }
+  }
+  @keyframes fadeIn{
+    from{ opacity: 0; }
+    to  { opacity: 1; }
+  }
+  @keyframes fadeUpSmall{
+    from{ opacity: 0; transform: translateY(8px); }
+    to  { opacity: 1; transform: none; }
+  }
+  @keyframes scaleIn{
+    from{ opacity: 0; transform: scale(0.96); }
+    to  { opacity: 1; transform: scale(1); }
+  }
+  @keyframes pulse-dot{
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: .4; transform: scale(.8); }
+  }
+
+  .fade-up   { animation: fadeUp 700ms var(--ease-out-expo) both; }
+  .fade-in   { animation: fadeIn 900ms ease both; }
+  .scale-in  { animation: scaleIn 800ms var(--ease-out-expo) both; }
+
+  .stagger-1 { animation: fadeUpSmall 600ms var(--ease-out-expo) both; animation-delay: 80ms; }
+  .stagger-2 { animation: fadeUpSmall 600ms var(--ease-out-expo) both; animation-delay: 160ms; }
+  .stagger-3 { animation: fadeUpSmall 600ms var(--ease-out-expo) both; animation-delay: 240ms; }
+  .stagger-4 { animation: fadeUpSmall 600ms var(--ease-out-expo) both; animation-delay: 320ms; }
+
+  .loader-dot{
+    display: inline-block;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--brass-dim);
+    animation: pulse-dot 1.4s var(--ease-in-out) infinite;
+    vertical-align: 2px;
+    margin-right: 8px;
+  }
+
+  /* ─── Inline fare input ───────────────────────────────────────────── */
+  .fare-input-wrap{
+    display: inline-flex; align-items: baseline; gap: 2px;
+    font-family: var(--mono); font-size: 12px; font-weight: 500;
+    letter-spacing: .04em;
+    color: var(--brass);
+    padding: 3px 6px 4px;
+    border-bottom: 1px solid var(--line-soft);
+    transition: border-color 180ms var(--ease-out-quart);
+    font-variant-numeric: tabular-nums;
+    cursor: text;
+  }
+  .fare-input-wrap:hover{ border-bottom-color: var(--brass-dim); }
+  .fare-input-wrap:focus-within{
+    border-bottom-color: var(--brass);
+  }
+  .fare-input{
+    background: transparent;
+    border: 0; outline: 0;
+    color: var(--brass);
+    font: inherit;
+    width: 8ch;
+    text-align: center;
+    padding: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .fare-input::-webkit-outer-spin-button,
+  .fare-input::-webkit-inner-spin-button{
+    -webkit-appearance: none; margin: 0;
+  }
+  .fare-input{ -moz-appearance: textfield; }
+
+  ::selection{ background: oklch(74% 0.12 75 / .4); color: var(--cream); }
+
+  *::-webkit-scrollbar{ width: 10px; height: 10px; }
+  *::-webkit-scrollbar-track{ background: transparent; }
+  *::-webkit-scrollbar-thumb{
+    background: oklch(32% 0.03 245);
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover{
+    background: oklch(42% 0.04 245);
+    background-clip: content-box;
+    border: 2px solid transparent;
+  }
+
+  /* ─── Status (top-right pill) ────────────────────────────────────── */
+  .status{
+    position: fixed; top: 18px; right: 22px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 16px 10px 14px;
+    background: oklch(13% 0.02 245 / .9);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-family: var(--mono);
+    font-size: 11.5px; font-weight: 500;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--cream-mute);
+    z-index: 100;
+    transition:
+      opacity 500ms var(--ease-out-expo),
+      transform 500ms var(--ease-out-expo);
+  }
+  .status.ready { color: var(--safe); border-color: oklch(50% 0.10 155 / .6); }
+  .status.error { color: var(--danger-2); border-color: oklch(50% 0.14 28 / .6); }
+  .status.hidden {
+    opacity: 0;
+    transform: translateY(-8px);
+    pointer-events: none;
+  }
+  .status .dot{
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .status.loading .dot{
+    animation: pulse-dot 1.4s var(--ease-in-out) infinite;
+  }
+
+  /* ─── Result helpers ──────────────────────────────────────────────── */
+  .verdict-h{
+    font-size: clamp(42px, 6vw, 60px);
+    font-weight: 600;
+    letter-spacing: -.005em;
+    line-height: 1.02;
+    margin: 14px 0 8px;
+  }
+  .ring-wrap{ position: relative; margin: 8px auto 0; }
+
+  /* Stat row */
+  .stats{
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0;
+    text-align: center;
+  }
+  .stat{ padding: 0 12px; position: relative; }
+  .stat + .stat::before{
+    content: ""; position: absolute;
+    left: 0; top: 14%; bottom: 14%;
+    width: 1px; background: var(--line-soft);
+  }
+  .stat .stat-label{
+    font-family: var(--mono);
+    font-size: 11px; letter-spacing: .2em;
+    color: var(--muted);
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+  .stat .stat-value{
+    font-family: var(--serif);
+    font-size: 20px; font-weight: 500;
+    color: var(--cream);
+    margin-top: 8px;
+    text-transform: capitalize;
+  }
+
+  /* Quote */
+  .quote{
+    font-family: var(--serif);
+    font-size: 18px; line-height: 1.6;
+    color: var(--cream);
+    font-style: italic;
+    text-align: center;
+    max-width: 540px;
+    margin: 32px auto 0;
+    border-top: 1px solid var(--line-soft);
+    padding-top: 26px;
+    position: relative;
+  }
+  .quote::before{
+    content: "\201C";
+    position: absolute; left: 50%;
+    top: 6px; transform: translateX(-50%);
+    font-size: 32px;
+    color: var(--brass-dim);
+    background: oklch(17% 0.018 245 / 0.98);
+    padding: 0 14px;
+    line-height: 1;
+  }
+
+  .credit-meta{
+    font-family: var(--mono);
+    font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--brass-dim);
+    text-align: center;
+    margin-top: 28px;
+    font-weight: 500;
+  }
+  .credit-meta .accent{ color: var(--brass); }
+
+  .actions{
+    display: flex; justify-content: center; gap: 16px;
+    padding-bottom: 40px;
+    flex-wrap: wrap;
+  }
+
+  /* ─── Responsive ───────────────────────────────────────────────── */
+  @media (max-width: 720px) {
+    .grid-2{ grid-template-columns: 1fr !important; gap: 22px !important; }
+    .stats{ grid-template-columns: 1fr; gap: 16px; }
+    .stat + .stat::before{ display: none; }
+    .stat{ padding: 14px 0; border-top: 1px solid var(--line-faint); }
+    .stat:first-child{ border-top: 0; }
+    .container-pad{ padding: 52px 18px 28px !important; }
+    .card-pad{ padding: 30px 24px !important; }
+    .card-pad-result{ padding: 38px 24px !important; }
+    .status{ top: 12px; right: 12px; font-size: 9.5px; padding: 7px 12px 7px 10px; }
+    .compass{ width: 360px; height: 360px; top: -20px; }
+    .verdict-h{ font-size: 36px !important; }
+  }
+
+  /* ─── Honor reduced motion ─────────────────────────────────────── */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+    .compass{ animation: none; }
+    .bg-video, .bg-seam{ display: none; }
+  }
+</style>
+</head>
+<body>
+  <!-- Background: 4 video instances arranged as 2 pairs (left + right-mirrored)
+       Each pair crossfades within itself for a seamless loop. Mirroring the
+       right half eliminates the asymmetric darkness from the moonlight that
+       sits on one side of the source clip. -->
+  <video id="bg-L-1" class="bg-video left"  autoplay muted playsinline preload="auto"
+         aria-hidden="true" tabindex="-1"><source src="bg-ocean.mp4" type="video/mp4"></video>
+  <video id="bg-L-2" class="bg-video left  fade-out"  muted playsinline preload="auto"
+         aria-hidden="true" tabindex="-1"><source src="bg-ocean.mp4" type="video/mp4"></video>
+  <video id="bg-R-1" class="bg-video right" autoplay muted playsinline preload="auto"
+         aria-hidden="true" tabindex="-1"><source src="bg-ocean.mp4" type="video/mp4"></video>
+  <video id="bg-R-2" class="bg-video right fade-out"  muted playsinline preload="auto"
+         aria-hidden="true" tabindex="-1"><source src="bg-ocean.mp4" type="video/mp4"></video>
+
+  <!-- Soft blur seam to hide the centerline where the two halves meet -->
+  <div class="bg-seam" aria-hidden="true"></div>
+
+  <script>
+    // Two independent crossfade pairs (one per viewport half).
+    // Both pairs play the same clip so they stay in sync visually.
+    (function setupCrossfade(){
+      var CROSSFADE_LEAD = 1.4; // seconds before end to start the swap
+
+      function makePair(idA, idB){
+        var a = document.getElementById(idA);
+        var b = document.getElementById(idB);
+        var active = a, inactive = b;
+        var swapping = false;
+
+        function tick(){
+          if (swapping || !active.duration) return;
+          if (active.duration - active.currentTime <= CROSSFADE_LEAD){
+            swapping = true;
+            inactive.currentTime = 0;
+            inactive.play();
+            inactive.classList.remove('fade-out');
+            active.classList.add('fade-out');
+            var prev = active;
+            active = inactive;
+            inactive = prev;
+            setTimeout(function(){ prev.pause(); swapping = false; },
+                       CROSSFADE_LEAD * 1000);
+          }
+        }
+        a.addEventListener('timeupdate', tick);
+        b.addEventListener('timeupdate', tick);
+      }
+
+      makePair('bg-L-1', 'bg-L-2');
+      makePair('bg-R-1', 'bg-R-2');
+    })();
+  </script>
+
+  <div id="status" class="status loading" role="status" aria-live="polite">
+    <span class="dot"></span>
+    <span id="status-text">Cargando red neuronal</span>
+  </div>
+
+  <div id="root" data-screen-label="Titanic Predictor"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+
+  <script type="text/babel">
+  const { useState, useMemo, useEffect, useRef } = React;
+
+  // ─── Model loading (Keras .h5 → TF.js) ───────────────────────────────────
+  function useModelLoader() {
+    const [model, setModel] = useState(null);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+      const statusEl = document.getElementById('status');
+      const statusText = document.getElementById('status-text');
+      tf.loadLayersModel('model/model.json')
+        .then(m => {
+          setModel(m);
+          if (statusEl && statusText) {
+            statusEl.classList.remove('loading');
+            statusEl.classList.add('ready');
+            statusText.textContent = 'Red neuronal Keras lista';
+            setTimeout(() => statusEl.classList.add('hidden'), 2400);
+          }
+        })
+        .catch(err => {
+          console.error(err);
+          setError(err);
+          if (statusEl && statusText) {
+            statusEl.classList.remove('loading');
+            statusEl.classList.add('error');
+            statusText.textContent = 'Error al cargar modelo. Ejecuta train_model.py.';
+          }
+        });
+    }, []);
+
+    return { model, error };
+  }
+
+  async function predictWithModel(model, input) {
+    const features = [
+      input.fare,
+      input.pclass,
+      input.sex === 'female' ? 1 : 0,
+      input.age,
+      input.sibsp,
+    ];
+    const inputTensor = tf.tensor2d([features]);
+    const output = model.predict(inputTensor);
+    const probability = (await output.data())[0];
+    inputTensor.dispose();
+    output.dispose();
+    return probability;
+  }
+
+  function cohortLabel(input){
+    const sex = input.sex === 'female' ? 'mujeres' : 'hombres';
+    const cls = input.pclass === 1 ? 'primera clase'
+              : input.pclass === 2 ? 'segunda clase'
+              : 'tercera clase';
+    let agePart = '';
+    if (input.age <= 12) agePart = 'niños';
+    else if (input.age <= 30) agePart = 'jóvenes';
+    else if (input.age <= 50) agePart = 'adultos';
+    else agePart = 'mayores';
+    return `${agePart} ${sex}, ${cls}`;
+  }
+
+  // ─── Compass rose (slow perpetual rotation) ──────────────────────────────
+  function CompassRose() {
+    return (
+      <svg className="compass" viewBox="0 0 200 200" aria-hidden="true">
+        <circle cx="100" cy="100" r="98" fill="none" stroke="currentColor" strokeWidth=".5" />
+        <circle cx="100" cy="100" r="80" fill="none" stroke="currentColor" strokeWidth=".4" />
+        <circle cx="100" cy="100" r="60" fill="none" stroke="currentColor" strokeWidth=".3" />
+        {Array.from({ length: 72 }).map((_, i) => {
+          const a = (i * 5 * Math.PI) / 180;
+          const r1 = 80, r2 = i % 6 === 0 ? 90 : 84;
+          const x1 = 100 + Math.cos(a) * r1;
+          const y1 = 100 + Math.sin(a) * r1;
+          const x2 = 100 + Math.cos(a) * r2;
+          const y2 = 100 + Math.sin(a) * r2;
+          return (
+            <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
+              stroke="currentColor" strokeWidth={i % 6 === 0 ? .8 : .35} />
+          );
+        })}
+        <g fill="currentColor" stroke="none"
+           fontFamily="serif" fontSize="11" fontStyle="italic">
+          <text x="100" y="22" textAnchor="middle">N</text>
+          <text x="183" y="104" textAnchor="middle">E</text>
+          <text x="100" y="188" textAnchor="middle">S</text>
+          <text x="17" y="104" textAnchor="middle">W</text>
+        </g>
+        <g fill="currentColor" stroke="currentColor" strokeWidth=".4" strokeLinejoin="round">
+          <polygon points="100,40 105,100 100,160 95,100" opacity=".55" />
+          <polygon points="40,100 100,105 160,100 100,95" opacity=".4" />
+        </g>
+        <circle cx="100" cy="100" r="2.2" fill="currentColor" />
+      </svg>
+    );
+  }
+
+  // ─── Form parts ─────────────────────────────────────────────────────────
+  function Field({ label, liveValue, hint, children }) {
+    return (
+      <div className="field">
+        <label>
+          {label}
+          {liveValue !== undefined && (
+            <span className="live-value"> · {liveValue}</span>
+          )}
+          {hint && (
+            <span style={{
+              float: 'right', textTransform: 'none',
+              letterSpacing: '.04em', fontStyle: 'italic', opacity: .7
+            }}>{hint}</span>
+          )}
+        </label>
+        {children}
+      </div>
+    );
+  }
+
+  function Segmented({ value, onChange, options }) {
+    return (
+      <div className="seg" role="radiogroup">
+        {options.map(o => (
+          <button
+            key={o.value}
+            role="radio"
+            aria-checked={value === o.value}
+            aria-pressed={value === o.value}
+            onClick={() => onChange(o.value)}
+            type="button"
+          >
+            {o.label}
+            {o.sub && <span className="sub">{o.sub}</span>}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  function Stepper({ value, onChange, min = 0, max = 10 }) {
+    const dec = () => onChange(Math.max(min, value - 1));
+    const inc = () => onChange(Math.min(max, value + 1));
+    return (
+      <div className="stepper">
+        <button type="button" onClick={dec} aria-label="Disminuir"
+                disabled={value <= min}>−</button>
+        <div className="val" aria-live="polite">{value}</div>
+        <button type="button" onClick={inc} aria-label="Aumentar"
+                disabled={value >= max}>+</button>
+      </div>
+    );
+  }
+
+  function FareSlider({ value, onChange }) {
+    const min = 4, max = 250;
+    const clamp = (n) => Math.min(max, Math.max(min, n));
+    const clamped = clamp(Number(value) || min);
+    const pct = ((clamped - min) / (max - min)) * 100;
+
+    // Draft text state lets the user type "83." or "" without losing focus.
+    const [draft, setDraft] = useState(null);
+    const displayValue = draft !== null ? draft : String(value);
+
+    const onInputChange = (e) => setDraft(e.target.value);
+
+    const commit = () => {
+      if (draft === null) return;
+      if (draft.trim() === '') { setDraft(null); return; }
+      const n = parseFloat(draft.replace(',', '.'));
+      if (!isNaN(n)) onChange(clamp(n));
+      setDraft(null);
+    };
+
+    return (
+      <div>
+        <input
+          className="range"
+          type="range" min={min} max={max} step={1}
+          value={clamped}
+          onChange={e => { setDraft(null); onChange(+e.target.value); }}
+          style={{ '--pct': pct + '%' }}
+          aria-label="Tarifa pagada en libras"
+        />
+        <div style={{
+          display: 'flex', justifyContent: 'space-between',
+          alignItems: 'baseline',
+          fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--muted)',
+          letterSpacing: '.12em', marginTop: -2
+        }}>
+          <span>£{min}</span>
+          <label className="fare-input-wrap" title="Editar tarifa exacta">
+            <span style={{ color: 'var(--brass)' }}>£</span>
+            <input
+              className="fare-input"
+              type="text"
+              inputMode="decimal"
+              value={displayValue}
+              onChange={onInputChange}
+              onBlur={commit}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+                if (e.key === 'Escape') { setDraft(null); e.target.blur(); }
+              }}
+              onFocus={e => e.target.select()}
+              aria-label="Tarifa exacta en libras (acepta decimales)"
+            />
+          </label>
+          <span>£{max}+</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Header / decorative ────────────────────────────────────────────────
+  function Masthead() {
+    return (
+      <div style={{
+        textAlign: 'center', marginBottom: 48,
+        position: 'relative', zIndex: 1
+      }}>
+        <div style={{ position: 'relative' }}>
+          <CompassRose />
+          <div className="fade-up" style={{position: 'relative', paddingTop: 8}}>
+            <div className="eyebrow" style={{marginBottom: 14}}>
+              White Star Line  ·  Manifiesto № 1912
+            </div>
+            <div className="rule" style={{maxWidth: 320, margin: '0 auto 18px'}}>
+              <span className="diamond"></span>
+            </div>
+            <h1 className="serif" style={{
+              fontSize: 'clamp(44px, 6.8vw, 78px)',
+              lineHeight: .96, fontWeight: 600,
+              margin: '0 0 18px',
+              letterSpacing: '-.005em',
+              color: 'var(--cream)',
+              textShadow: '0 2px 30px oklch(0% 0 0 / .6)'
+            }}>
+              Predictor de Supervivencia
+            </h1>
+            <div className="serif" style={{
+              fontStyle: 'italic', fontSize: 22, fontWeight: 500,
+              color: 'var(--cream)',
+              maxWidth: 580, margin: '0 auto', lineHeight: 1.45,
+              textShadow: '0 1px 20px oklch(0% 0 0 / .55)'
+            }}>
+              Ingrese los detalles de su pasaje para estimar la probabilidad
+              de sobrevivir al hundimiento del R.M.S. Titanic, abril de 1912.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function SectionHead({ num, title, sub }) {
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'baseline', gap: 16, marginBottom: 22
+      }}>
+        <span className="serif" style={{
+          fontStyle: 'italic', fontSize: 38,
+          color: 'var(--brass)', lineHeight: 1,
+          fontWeight: 600, letterSpacing: '-.01em'
+        }}>{num}.</span>
+        <div style={{ flex: 1 }}>
+          <div className="serif" style={{
+            fontSize: 26, fontWeight: 600,
+            color: 'var(--cream)', letterSpacing: '.002em'
+          }}>{title}</div>
+          <div className="mono" style={{
+            fontSize: 12, letterSpacing: '.18em', fontWeight: 500,
+            color: 'var(--muted)', textTransform: 'uppercase', marginTop: 4
+          }}>{sub}</div>
+        </div>
+        <div style={{
+          flex: 1, height: 1,
+          background: 'linear-gradient(90deg, var(--line-soft), transparent)'
+        }}/>
+      </div>
+    );
+  }
+
+  // ─── Form view ─────────────────────────────────────────────────────────
+  function ManifestForm({ value, setValue, onSubmit, modelReady, predicting }) {
+    const v = value;
+    const set = (k) => (val) => setValue({ ...v, [k]: val });
+    const valid = v.sex && v.age >= 0 && v.pclass && modelReady && !predicting;
+
+    return (
+      <div className="card fade-up card-pad" style={{
+        padding: '46px 50px 40px', position: 'relative'
+      }}>
+        <div className="corners">
+          <span className="tl"></span><span className="tr"></span>
+          <span className="bl"></span><span className="br"></span>
+        </div>
+
+        {/* Section I */}
+        <div className="stagger-1">
+          <SectionHead num="I" title="Pasajero" sub="Detalles personales" />
+          <div className="grid-2" style={{
+            display: 'grid', gridTemplateColumns: '1fr 1fr',
+            gap: 26, marginBottom: 42
+          }}>
+            <Field label="Sexo">
+              <Segmented
+                value={v.sex}
+                onChange={set('sex')}
+                options={[
+                  { value: 'female', label: 'Mujer' },
+                  { value: 'male',   label: 'Hombre' },
+                ]}
+              />
+            </Field>
+            <Field label="Edad" liveValue={`${v.age} años`}>
+              <input
+                className="range" type="range" min={0} max={80} step={1}
+                value={v.age}
+                onChange={e => set('age')(+e.target.value)}
+                style={{ '--pct': (v.age/80)*100 + '%' }}
+                aria-label="Edad en anios"
+              />
+              <div style={{
+                display: 'flex', justifyContent: 'space-between',
+                fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--muted)',
+                letterSpacing: '.12em', marginTop: -4
+              }}>
+                <span>0</span><span>40</span><span>80</span>
+              </div>
+            </Field>
+          </div>
+        </div>
+
+        {/* Section II */}
+        <div className="stagger-2">
+          <SectionHead num="II" title="Pasaje" sub="Clase y tarifa" />
+          <Field label="Clase de viaje">
+            <div className="seg" style={{ marginBottom: 26 }} role="radiogroup">
+              {[
+                { v: 1, label: 'Primera',  sub: 'Cubierta A–E' },
+                { v: 2, label: 'Segunda',  sub: 'Cubierta D–F' },
+                { v: 3, label: 'Tercera',  sub: 'Cubierta E–G' },
+              ].map(o => (
+                <button key={o.v} type="button"
+                        role="radio"
+                        aria-checked={v.pclass === o.v}
+                        aria-pressed={v.pclass === o.v}
+                        onClick={() => set('pclass')(o.v)}>
+                  {o.label}<span className="sub">{o.sub}</span>
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          <div style={{ marginBottom: 42 }}>
+            <Field label="Tarifa pagada" liveValue={`£${v.fare}`}
+                   hint="libras esterlinas, 1912">
+              <FareSlider value={v.fare} onChange={set('fare')} />
+            </Field>
+          </div>
+        </div>
+
+        {/* Section III */}
+        <div className="stagger-3">
+          <SectionHead num="III" title="Compañía" sub="Familia a bordo" />
+          <div style={{ marginBottom: 38, maxWidth: 320 }}>
+            <Field label="Hermanos o cónyuge a bordo">
+              <Stepper value={v.sibsp} onChange={set('sibsp')} min={0} max={8} />
+            </Field>
+          </div>
+        </div>
+
+        {/* Submit */}
+        <div className="stagger-4">
+          <div className="rule" style={{margin: '14px 0 30px'}}>
+            <span className="diamond"></span>
+          </div>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between',
+            alignItems: 'center', gap: 16, flexWrap: 'wrap'
+          }}>
+            <div className="mono" style={{
+              fontSize: 11.5, color: 'var(--muted)',
+              letterSpacing: '.16em', textTransform: 'uppercase'
+            }}>
+              14 ABR 1912  ·  23:40 GMT  ·  41°43′N  49°56′W
+            </div>
+            <button className="btn" type="button" disabled={!valid} onClick={onSubmit}>
+              {predicting ? (
+                <><span className="loader-dot" style={{
+                  background: 'oklch(14% 0.02 80)'
+                }}></span>Calculando...</>
+              ) : (
+                <>Calcular destino  →</>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Result ring (animated) ────────────────────────────────────────────
+  function ResultRing({ p }) {
+    const size = 300, r = 130, c = 2 * Math.PI * r;
+    const survived = p >= 0.5;
+    const ringColor = survived ? 'var(--brass)' : 'oklch(64% 0.17 28)';
+
+    const [shown, setShown] = useState(0);
+    useEffect(() => {
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (reduced) { setShown(p); return; }
+      let t0 = null, raf;
+      const dur = 1600;
+      const tick = (ts) => {
+        if (!t0) t0 = ts;
+        const k = Math.min(1, (ts - t0) / dur);
+        const eased = k === 1 ? 1 : 1 - Math.pow(2, -10 * k);
+        setShown(p * eased);
+        if (k < 1) raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+      return () => cancelAnimationFrame(raf);
+    }, [p]);
+
+    return (
+      <div className="ring-wrap" style={{ width: size, height: size }}>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}
+             style={{ transform: 'rotate(-90deg)' }}
+             aria-hidden="true">
+          <circle cx={size/2} cy={size/2} r={r}
+            fill="none" stroke="var(--line-soft)" strokeWidth="2" />
+          <circle cx={size/2} cy={size/2} r={r}
+            fill="none" stroke={ringColor} strokeWidth="3.5"
+            strokeLinecap="round"
+            strokeDasharray={c}
+            style={{
+              strokeDashoffset: c - shown * c,
+              transition: 'stroke 1s ease',
+              filter: `drop-shadow(0 0 18px ${
+                survived ? 'oklch(74% 0.12 75 / .65)' : 'oklch(64% 0.17 28 / .55)'
+              })`
+            }} />
+          {Array.from({ length: 60 }).map((_, i) => {
+            const a = (i / 60) * Math.PI * 2;
+            const x1 = size/2 + Math.cos(a) * (r + 12);
+            const y1 = size/2 + Math.sin(a) * (r + 12);
+            const x2 = size/2 + Math.cos(a) * (r + (i % 5 === 0 ? 22 : 17));
+            const y2 = size/2 + Math.sin(a) * (r + (i % 5 === 0 ? 22 : 17));
+            return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
+                         stroke="var(--brass-dim)"
+                         strokeWidth={i%5===0?1:.5}
+                         opacity={i%5===0?.75:.35} />;
+          })}
+        </svg>
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          textAlign: 'center'
+        }}>
+          <div className="mono" style={{
+            fontSize: 10.5, letterSpacing: '.28em',
+            color: 'var(--brass-dim)', textTransform: 'uppercase'
+          }}>
+            Probabilidad
+          </div>
+          <div className="serif" style={{
+            fontSize: 88, lineHeight: 1, fontWeight: 500,
+            color: 'var(--cream)',
+            fontVariantNumeric: 'tabular-nums',
+            marginTop: 6,
+            letterSpacing: '-.02em'
+          }}>
+            {Math.round(shown * 100)}<span style={{
+              fontSize: 40, color: ringColor, marginLeft: 2,
+              letterSpacing: 0
+            }}>%</span>
+          </div>
+          <div className="serif" style={{
+            fontStyle: 'italic', fontSize: 17,
+            color: 'var(--cream-mute)', marginTop: 6
+          }}>
+            de supervivencia
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function Stat({ label, value }){
+    return (
+      <div className="stat">
+        <div className="stat-label">{label}</div>
+        <div className="stat-value">{value}</div>
+      </div>
+    );
+  }
+
+  // ─── Result view ──────────────────────────────────────────────────────
+  function ResultView({ input, probability, onReset }) {
+    const survived = probability >= 0.5;
+    const verdict = survived
+      ? 'Sobrevive al naufragio'
+      : 'Perece en el naufragio';
+    const stamp = survived ? 'Sobrevive' : 'No sobrevive';
+    const accentColor = survived ? 'var(--brass)' : 'oklch(72% 0.16 28)';
+    const cohort = cohortLabel(input);
+    const sexLabel = input.sex === 'female' ? 'Mujer' : 'Hombre';
+    const classLabel = input.pclass === 1 ? '1ra clase'
+                     : input.pclass === 2 ? '2da clase'
+                     : '3ra clase';
+
+    return (
+      <div className="fade-in" style={{ display: 'grid', gap: 28 }}>
+        <div className="card scale-in card-pad-result" style={{
+          padding: '54px 50px 46px', position: 'relative'
+        }}>
+          <div className="corners">
+            <span className="tl"></span><span className="tr"></span>
+            <span className="bl"></span><span className="br"></span>
+          </div>
+
+          <div style={{ textAlign: 'center', marginBottom: 32 }}>
+            <div className="eyebrow stagger-1" style={{ color: accentColor }}>
+              Veredicto del Manifiesto
+            </div>
+            <h2 className="serif verdict-h stagger-2" style={{
+              color: accentColor,
+              textShadow: '0 2px 24px oklch(0% 0 0 / .5)'
+            }}>{verdict}</h2>
+            <div className="serif stagger-3" style={{
+              fontStyle: 'italic', color: 'var(--cream-mute)',
+              fontSize: 17.5
+            }}>
+              {sexLabel}, {input.age} años, {classLabel}
+            </div>
+            <div className="stagger-3" style={{
+              display: 'inline-flex', alignItems: 'center', gap: 12,
+              marginTop: 18,
+              padding: '8px 18px',
+              border: `1px solid ${accentColor}`,
+              borderRadius: 999,
+              background: survived
+                ? 'oklch(76% 0.105 78 / 0.08)'
+                : 'oklch(64% 0.17 28 / 0.08)',
+              fontFamily: 'var(--mono)',
+              fontSize: 11.5, fontWeight: 600,
+              letterSpacing: '.22em',
+              textTransform: 'uppercase',
+              color: accentColor
+            }}>
+              <span style={{
+                width: 6, height: 6,
+                transform: 'rotate(45deg)',
+                background: accentColor
+              }}></span>
+              {stamp}
+              <span style={{
+                width: 6, height: 6,
+                transform: 'rotate(45deg)',
+                background: accentColor
+              }}></span>
+            </div>
+          </div>
+
+          <div className="stagger-3" style={{ marginTop: 8 }}>
+            <ResultRing p={probability} />
+          </div>
+
+          <div className="rule stagger-4" style={{
+            margin: '36px auto 28px', maxWidth: 380
+          }}>
+            <span className="diamond"></span>
+          </div>
+
+          <div className="stats stagger-4">
+            <Stat label="Cohorte" value={cohort} />
+            <Stat label="Tarifa"  value={`£${input.fare}`} />
+            <Stat label="Familia" value={`${input.sibsp} a bordo`} />
+          </div>
+
+          <div className="credit-meta stagger-4" style={{ marginTop: 32 }}>
+            Predicción de red neuronal · 5 → 32 → 32 → 1 · entrenada en{' '}
+            <span className="accent">915 pasajeros históricos</span>
+          </div>
+        </div>
+
+        <div className="actions">
+          <button className="btn ghost" onClick={onReset}>← Editar manifiesto</button>
+          <button className="btn" onClick={onReset}>Otro pasajero</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Root ────────────────────────────────────────────────────────────
+  // ─── Enlace al proyecto hermano (SIDX · Sistema Experto de Dengue) ───────
+  function CrossProjectLink() {
+    const [hover, setHover] = useState(false);
+    return (
+      <a
+        href="https://sistema-experto-dengue.vercel.app/"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="SIDX — Sistema Experto para Diagnóstico de Dengue"
+        className="mono"
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 9,
+          padding: '9px 16px', borderRadius: 999,
+          fontSize: 11.5, letterSpacing: '.16em', textTransform: 'uppercase',
+          fontWeight: 500, textDecoration: 'none',
+          color: hover ? 'var(--brass)' : 'var(--muted)',
+          border: '1px solid',
+          borderColor: hover ? 'var(--brass-dim)' : 'var(--line-soft)',
+          background: hover ? 'oklch(82% 0.12 78 / .06)' : 'transparent',
+          transition: 'color .35s var(--ease-out-quart), border-color .35s var(--ease-out-quart), background .35s var(--ease-out-quart)'
+        }}
+      >
+        <span style={{ opacity: .65 }}>Proyecto relacionado</span>
+        <span style={{ color: 'var(--line)' }}>·</span>
+        <span>Sistema Experto Dengue</span>
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none"
+             stroke="currentColor" strokeWidth="1.8" aria-hidden="true"
+             style={{
+               transform: hover ? 'translate(2px, -2px)' : 'none',
+               transition: 'transform .35s var(--ease-out-quart)'
+             }}>
+          <path d="M7 17L17 7M9 7h8v8" />
+        </svg>
+      </a>
+    );
+  }
+
+  function App() {
+    const { model } = useModelLoader();
+    const [stage, setStage] = useState('form');
+    const [predicting, setPredicting] = useState(false);
+    const [probability, setProbability] = useState(0);
+    const [input, setInput] = useState({
+      sex: 'female',
+      age: 28,
+      pclass: 1,
+      fare: 71,
+      sibsp: 1,
+    });
+
+    const submit = async () => {
+      if (!model) return;
+      setPredicting(true);
+      try {
+        await new Promise(r => setTimeout(r, 320));
+        const prob = await predictWithModel(model, input);
+        setProbability(prob);
+        setStage('result');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch (e) {
+        console.error(e);
+        alert('Error al predecir: ' + e.message);
+      } finally {
+        setPredicting(false);
+      }
+    };
+
+    const reset = () => {
+      setStage('form');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    return (
+      <div className="stage" data-screen-label={stage === 'form' ? 'Manifest Form' : 'Result Reveal'}>
+        <div className="container-pad" style={{
+          maxWidth: 800, margin: '0 auto',
+          padding: stage === 'form' ? '84px 26px 48px' : '120px 26px 48px'
+        }}>
+          {stage === 'form' && <Masthead />}
+          {stage === 'form'
+            ? <ManifestForm
+                value={input}
+                setValue={setInput}
+                onSubmit={submit}
+                modelReady={!!model}
+                predicting={predicting} />
+            : <ResultView
+                input={input}
+                probability={probability}
+                onReset={reset} />}
+
+          <footer style={{ textAlign: 'center', marginTop: 56, paddingBottom: 28 }}>
+            <div className="rule" style={{ maxWidth: 200, margin: '0 auto 22px' }}>
+              <span className="diamond"></span>
+            </div>
+            <CrossProjectLink />
+          </footer>
+        </div>
+      </div>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

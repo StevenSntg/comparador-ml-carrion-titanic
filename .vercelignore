@@ -1,0 +1,20 @@
+# Solo se despliega la carpeta public/ a Vercel.
+# Estos archivos viven en el proyecto pero NO se suben:
+
+# Notebook de entrenamiento
+*.ipynb
+
+# Modelos Keras (entregable para el profesor, no para el browser)
+mimodelo.json
+mimodelo.weights.h5
+*.h5
+
+# Datasets crudos (el browser no los necesita)
+*.csv
+
+# Misc
+__pycache__/
+.venv/
+venv/
+.DS_Store
+*.log
