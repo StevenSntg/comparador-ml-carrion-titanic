@@ -1,0 +1,8 @@
+# Tratar binarios sin conversión de fin de línea (evita corrupción)
+*.pdf binary
+*.h5 binary
+*.weights.h5 binary
+*.bin binary
+*.pkl binary
+*.mp4 binary
+*.ipynb binary
