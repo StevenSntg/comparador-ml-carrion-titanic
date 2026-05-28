@@ -311,6 +311,88 @@ ad_blocks = [
           "<b>generalización y prudencia</b> de sus probabilidades."),
 ]
 
+# ══════════════════════════════════════════════════════════════════════════
+# PDF 3 — CASO CLÍNICO (síntomas, dataset simulado)
+# ══════════════════════════════════════════════════════════════════════════
+clinico_blocks = [
+    ("note", "DATASET SIMULADO con fines educativos. No proviene del MINSA ni de ninguna "
+             "fuente real: los datos abiertos peruanos de vigilancia no publican síntomas por "
+             "paciente. Aquí se GENERAN sintéticamente según los criterios clínicos de la "
+             "literatura médica, para comparar ambos modelos sobre variables (síntomas) que sí "
+             "distinguen bien cada fase."),
+    ("p", "Este documento explica el código del caso <b>«Carrión por síntomas»</b>: un "
+          "formulario donde se marcan síntomas y los modelos predicen la fase <b>AGUDA</b> "
+          "(Fiebre de la Oroya) o <b>ERUPTIVA</b> (Verruga Peruana). Se comparan Red Neuronal "
+          "y Árbol de Decisión, igual que en los otros casos."),
+
+    ("h2", "1. Generación del dataset sintético"),
+    ("code",
+     'rng = np.random.RandomState(42); N = 6000\n'
+     'SINTOMAS = ["fiebre_alta","palidez_anemia","fatiga_debilidad","dolor_cabeza_cuerpo",\n'
+     '            "ictericia","ganglios_hinchazon","verrugas_piel","sangrado_lesiones"]\n'
+     '# Probabilidad de cada síntoma SEGÚN la fase (de la clínica):\n'
+     'P_AGUDA    = {"fiebre_alta":.92, "palidez_anemia":.90, ... "verrugas_piel":.05}\n'
+     'P_ERUPTIVA = {"fiebre_alta":.12, "palidez_anemia":.16, ... "verrugas_piel":.90}\n'
+     'for fase in fases:                      # fase sorteada 50/50\n'
+     '    P = P_AGUDA if fase=="AGUDA" else P_ERUPTIVA\n'
+     '    fila = {s: int(rng.rand() < P[s]) for s in SINTOMAS}   # Bernoulli(P)'),
+    ("p", "Para cada paciente se sortea su fase y luego cada síntoma se activa (1) o no (0) "
+          "con una probabilidad que depende de la fase. Por ejemplo, la fiebre aparece en el "
+          "92% de los casos agudos pero solo en el 12% de los eruptivos; las verrugas, al "
+          "revés. Así el dataset refleja la clínica real sin ser datos reales."),
+    ("note", "Se añade ~8% de ruido (voltear un síntoma al azar) para simular presentaciones "
+             "atípicas y evitar que la clasificación sea trivial."),
+
+    ("h2", "2. Preparar entradas y dividir train/test"),
+    ("code",
+     'X = df[SINTOMAS].values.astype(float)            # 8 síntomas (0/1)\n'
+     'Y = (df["fase"] == "ERUPTIVA").astype(int).values # AGUDA=0, ERUPTIVA=1\n'
+     'Xtr,Xte,ytr,yte = train_test_split(X,Y, test_size=.2, stratify=Y, random_state=42)'),
+    ("p", "Las 8 columnas de síntomas son la entrada; la fase es el objetivo. Reservamos 20% "
+          "para prueba. Como los síntomas ya son 0/1, <b>no hace falta normalizar</b> "
+          "(ni para el árbol ni para la red)."),
+
+    ("h2", "3. Árbol de Decisión"),
+    ("code",
+     'from sklearn.tree import DecisionTreeClassifier\n'
+     'arbol = DecisionTreeClassifier(criterion="entropy", random_state=42).fit(Xtr, ytr)\n'
+     'print("train:", arbol.score(Xtr,ytr), " test:", arbol.score(Xte,yte))'),
+    ("p", "El árbol aprende reglas del tipo «¿tiene verrugas? → ERUPTIVA». Con síntomas tan "
+          "informativos, sus reglas son cortas y certeras."),
+
+    ("h2", "4. Red Neuronal (8 → 32 → 32 → 1)"),
+    ("code",
+     'red = keras.Sequential()\n'
+     'red.add(layers.Dense(32, input_dim=8, activation="relu"))\n'
+     'red.add(layers.Dense(32, activation="relu"))\n'
+     'red.add(layers.Dense(1, activation="sigmoid"))\n'
+     'red.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])\n'
+     'red.fit(Xtr, ytr, epochs=200, batch_size=64, verbose=0)'),
+    ("p", "Misma arquitectura que los otros casos, pero con <b>8 entradas</b> (una por "
+          "síntoma). La capa final sigmoide da la probabilidad de ERUPTIVA."),
+
+    ("h2", "5. Predicción de un caso por síntomas"),
+    ("code",
+     '# [fiebre,palidez,fatiga,dolor,ictericia,ganglios,verrugas,sangrado]\n'
+     'caso_sistemico = np.array([[1,1,1,1,0,0,0,0]])   # -> AGUDA\n'
+     'caso_cutaneo   = np.array([[0,0,0,0,0,0,1,1]])   # -> ERUPTIVA\n'
+     'arbol.predict(caso_cutaneo)            # 1 (ERUPTIVA)\n'
+     'red.predict(caso_cutaneo)[0][0] >= 0.5 # True (ERUPTIVA)'),
+    ("p", "Un paciente con síntomas sistémicos (fiebre, anemia, fatiga) es clasificado como "
+          "AGUDA por ambos modelos; uno con verrugas que sangran, como ERUPTIVA. Es el mismo "
+          "razonamiento que hace el formulario web."),
+
+    ("h2", "Resultado e interpretación"),
+    ("p", "Aquí <b>ambos modelos alcanzan ~98% en prueba</b> y coinciden casi siempre. Esto "
+          "contrasta con el caso basado en datos del MINSA (edad, sexo, zona, fecha), donde el "
+          "árbol sobreajustaba y la red generalizaba mejor."),
+    ("p", "<b>Lección de la comparativa:</b> la <b>calidad de las variables importa tanto o "
+          "más que el modelo</b>. Con predictores realmente informativos (síntomas), Red "
+          "Neuronal y Árbol rinden parecido; las diferencias entre modelos se notan sobre todo "
+          "cuando los datos son débiles o ruidosos. (Recordatorio: dataset simulado, no apto "
+          "para diagnóstico real.)"),
+]
+
 make_pdf("Carrion_RedNeuronal_explicacion.pdf",
          "Red Neuronal aplicada a la Enfermedad de Carrión",
          "Explicación del código, paso a paso (material de exposición)",
@@ -320,3 +402,8 @@ make_pdf("Carrion_ArbolDecision_explicacion.pdf",
          "Árbol de Decisión aplicado a la Enfermedad de Carrión",
          "Explicación del código, paso a paso (material de exposición)",
          "#1f7a4d", ad_blocks)
+
+make_pdf("Carrion_Clinico_explicacion.pdf",
+         "Carrión por síntomas — Red Neuronal vs. Árbol (dataset simulado)",
+         "Explicación del código, paso a paso (material de exposición)",
+         "#157a8a", clinico_blocks)
