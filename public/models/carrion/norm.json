@@ -1,0 +1,1 @@
+{"feature_names": ["edad", "sexo", "departamento", "anio", "semana"], "min": [0.0, 0.0, 0.0, 2000.0, 1.0], "max": [99.0, 1.0, 18.0, 2024.0, 53.0]}
