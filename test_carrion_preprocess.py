@@ -48,7 +48,7 @@ def test_build_xy_devuelve_5_columnas_y_target_binario():
         "edad": [20, 6],
         "tipo_edad": ["A", "M"],
         "sexo": ["M", "F"],
-        "anio": [2004, 2010],
+        "ano": [2004, 2010],
         "semana": [31, 4],
         "enfermedad": ["ENFERMEDAD DE CARRION AGUDA",
                        "ENFERMEDAD DE CARRION ERUPTIVA"],

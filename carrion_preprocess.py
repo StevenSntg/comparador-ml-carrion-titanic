@@ -62,6 +62,7 @@ def build_xy(df):
     df["target"] = df["enfermedad"].map(TARGET_MAP)
     df = df.dropna(subset=["target"])  # descarta enfermedades fuera del mapa
 
-    X = df[["edad_anios", "sexo_cod", "depto_cod", "anio", "semana"]].values.astype(float)
+    # La columna de año en el CSV del MINSA se llama "ano" (sin diacrítico).
+    X = df[["edad_anios", "sexo_cod", "depto_cod", "ano", "semana"]].values.astype(float)
     y = df["target"].astype(int).values
     return X, y
