@@ -35,6 +35,9 @@
     /* Acento del caso Carrión — ocre/tierra de los valles interandinos */
     --accent-carrion:     oklch(70% 0.135 55);
     --accent-carrion-dim: oklch(55% 0.10  52);
+    /* Acento del caso clínico — verde-azulado de salud */
+    --accent-clinico:     oklch(74% 0.115 180);
+    --accent-clinico-dim: oklch(60% 0.09  182);
 
     /* Typography */
     --serif: 'Cormorant Garamond', 'Times New Roman', serif;
@@ -733,6 +736,49 @@
     outline: none; border-color: var(--brass-dim);
   }
 
+  /* ════════════════════════════════════════════════════════════════════
+     TEMA CLÍNICO — caso "Carrión por síntomas" (dataset simulado)
+     Verde-azulado de salud, fondo frío limpio, sin océano ni topografía.
+  ════════════════════════════════════════════════════════════════════ */
+  body.theme-clinico{
+    --serif: 'Fraunces', Georgia, serif;
+    --mono:  'IBM Plex Mono', ui-monospace, Menlo, monospace;
+    --brass:      oklch(76% 0.115 180);
+    --brass-2:    oklch(68% 0.115 182);
+    --brass-dim:  oklch(60% 0.09  182);
+    --brass-deep: oklch(44% 0.06  185);
+    background:
+      radial-gradient(ellipse 130% 90% at 50% -8%,
+        oklch(28% 0.045 190 / 0.5) 0%, transparent 56%),
+      linear-gradient(180deg, oklch(14% 0.02 200) 0%, oklch(10% 0.015 205) 100%);
+  }
+  body.theme-clinico .bg-video,
+  body.theme-clinico .bg-seam,
+  body.theme-clinico .topo{ opacity: 0 !important; }
+  body.theme-clinico .card{
+    background: linear-gradient(180deg,
+      oklch(19% 0.022 195 / 0.94), oklch(14.5% 0.018 200 / 0.96));
+    border-color: oklch(40% 0.03 190);
+  }
+  body.theme-clinico .btn{
+    background: linear-gradient(180deg, oklch(76% 0.115 180), oklch(62% 0.115 184));
+    border-color: oklch(64% 0.10 182);
+    color: oklch(15% 0.03 200);
+    box-shadow:
+      0 1px 0 oklch(88% 0.05 185 / .45) inset,
+      0 8px 24px oklch(40% 0.07 190 / .38);
+  }
+  body.theme-clinico .btn.ghost{
+    background: transparent; color: var(--cream-mute);
+    border-color: var(--line); box-shadow: none;
+  }
+  body.theme-clinico .seg button[aria-pressed="true"]{
+    color: var(--brass);
+    box-shadow:
+      0 0 0 1px var(--brass-dim) inset,
+      0 1px 0 oklch(40% 0.04 190 / .5) inset;
+  }
+
   /* ─── Honor reduced motion ─────────────────────────────────────── */
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
@@ -867,10 +913,33 @@
       toVector: (i) => [i.edad, i.sexo, i.departamento, anioDe(i.fecha), semanaEpi(i.fecha)],
       defaults: { edad: 20, sexo: 0, departamento: 1, fecha: "2004-08-01" },
     },
+    carrion_clinico: {
+      label: "Carrión clínico",
+      modelDir: "models/carrion_clinico",
+      hasNorm: false,                 // los síntomas ya son 0/1
+      classLabels: ["AGUDA", "ERUPTIVA"],
+      positiveIdx: 1,
+      simulado: true,                 // dataset sintético -> badge en la UI
+      toVector: (i) => SINTOMAS_CARRION.map((s) => (i[s.key] ? 1 : 0)),
+      defaults: { fiebre_alta: 1, palidez_anemia: 1, fatiga_debilidad: 1,
+                  dolor_cabeza_cuerpo: 0, ictericia: 0, ganglios_hinchazon: 0,
+                  verrugas_piel: 0, sangrado_lesiones: 0 },
+    },
   };
   const DEPARTAMENTOS = ["AMAZONAS","ANCASH","APURIMAC","AYACUCHO","CAJAMARCA",
    "CUSCO","HUANUCO","JUNIN","LA LIBERTAD","LAMBAYEQUE","LIMA","LORETO",
    "MADRE DE DIOS","PASCO","PIURA","PUNO","SAN MARTIN","TACNA","UCAYALI"];
+  // Síntomas del caso clínico — el ORDEN debe coincidir con el entrenamiento.
+  const SINTOMAS_CARRION = [
+    { key: "fiebre_alta",         label: "Fiebre alta (>39 °C) con escalofríos" },
+    { key: "palidez_anemia",      label: "Palidez o signos de anemia" },
+    { key: "fatiga_debilidad",    label: "Fatiga intensa y debilidad" },
+    { key: "dolor_cabeza_cuerpo", label: "Dolor de cabeza y corporal" },
+    { key: "ictericia",           label: "Ictericia (piel u ojos amarillentos)" },
+    { key: "ganglios_hinchazon",  label: "Ganglios inflamados o hinchazón abdominal" },
+    { key: "verrugas_piel",       label: "Verrugas o nódulos rojizos en la piel" },
+    { key: "sangrado_lesiones",   label: "Sangrado o molestia de esas lesiones" },
+  ];
 
   function featureVector(caseKey, input) {
     return CASES[caseKey].toVector(input).map(Number);
@@ -1104,46 +1173,56 @@
 
   // ─── Header / decorative ────────────────────────────────────────────────
   function CaseMasthead({ caseKey }) {
-    const isTitanic = caseKey === "titanic";
-    const accent = isTitanic ? "var(--brass)" : "var(--accent-carrion)";
+    const COPY = {
+      titanic: {
+        accent: "var(--brass)",
+        eyebrow: "White Star Line  ·  Manifiesto № 1912",
+        title: "Predictor de Supervivencia",
+        desc: "Compare una red neuronal y un árbol de decisión estimando si un pasajero del R.M.S. Titanic habría sobrevivido al naufragio de 1912.",
+      },
+      carrion: {
+        accent: "var(--accent-carrion)",
+        eyebrow: "MINSA  ·  Vigilancia Epidemiológica 2000–2024",
+        title: "Clasificador de Fase — Carrión",
+        desc: "Compare una red neuronal y un árbol de decisión clasificando la fase (aguda vs. eruptiva) de la enfermedad de Carrión, a partir de datos de vigilancia del MINSA.",
+      },
+      carrion_clinico: {
+        accent: "var(--accent-clinico)",
+        eyebrow: "Modelo clínico  ·  por síntomas",
+        title: "Carrión — Diagnóstico por síntomas",
+        desc: "Marque los síntomas del paciente y compare cómo la red neuronal y el árbol de decisión estiman la fase: aguda (Fiebre de la Oroya) o eruptiva (Verruga Peruana).",
+      },
+    };
+    const c = COPY[caseKey];
     return (
-      <div style={{
-        textAlign: 'center', marginBottom: 44,
-        position: 'relative', zIndex: 1
-      }}>
+      <div style={{ textAlign: 'center', marginBottom: 44, position: 'relative', zIndex: 1 }}>
         <div style={{ position: 'relative' }}>
-          {isTitanic && <CompassRose />}
+          {caseKey === "titanic" && <CompassRose />}
           <div className="fade-up" style={{position: 'relative', paddingTop: 8}}>
-            <div className="eyebrow" style={{marginBottom: 14, color: accent}}>
-              {isTitanic
-                ? "White Star Line  ·  Manifiesto № 1912"
-                : "MINSA  ·  Vigilancia Epidemiológica 2000–2024"}
-            </div>
+            <div className="eyebrow" style={{marginBottom: 14, color: c.accent}}>{c.eyebrow}</div>
             <div className="rule" style={{maxWidth: 320, margin: '0 auto 18px'}}>
               <span className="diamond"></span>
             </div>
             <h1 className="serif" style={{
-              fontSize: 'clamp(38px, 6vw, 70px)',
-              lineHeight: .98, fontWeight: 600,
-              margin: '0 0 18px',
-              letterSpacing: '-.005em',
-              color: 'var(--cream)',
-              textShadow: '0 2px 30px oklch(0% 0 0 / .6)'
-            }}>
-              {isTitanic
-                ? "Predictor de Supervivencia"
-                : "Clasificador de Fase — Carrión"}
-            </h1>
+              fontSize: 'clamp(38px, 6vw, 70px)', lineHeight: .98, fontWeight: 600,
+              margin: '0 0 18px', letterSpacing: '-.005em',
+              color: 'var(--cream)', textShadow: '0 2px 30px oklch(0% 0 0 / .6)'
+            }}>{c.title}</h1>
             <div className="serif" style={{
-              fontStyle: 'italic', fontSize: 20, fontWeight: 500,
-              color: 'var(--cream)',
+              fontStyle: 'italic', fontSize: 20, fontWeight: 500, color: 'var(--cream)',
               maxWidth: 600, margin: '0 auto', lineHeight: 1.45,
               textShadow: '0 1px 20px oklch(0% 0 0 / .55)'
-            }}>
-              {isTitanic
-                ? "Compare una red neuronal y un árbol de decisión estimando si un pasajero del R.M.S. Titanic habría sobrevivido al naufragio de 1912."
-                : "Compare una red neuronal y un árbol de decisión clasificando la fase (aguda vs. eruptiva) de la enfermedad de Carrión, a partir de datos de vigilancia del MINSA."}
-            </div>
+            }}>{c.desc}</div>
+            {CASES[caseKey].simulado && (
+              <div className="mono" style={{
+                display: 'inline-block', marginTop: 16, padding: '6px 15px', borderRadius: 999,
+                fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase',
+                color: 'var(--accent-clinico)', border: '1px solid var(--accent-clinico)',
+                background: 'oklch(72% 0.10 175 / .08)'
+              }}>
+                Dataset clínico simulado · fines educativos
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1250,7 +1329,7 @@
               </div>
             </div>
           </React.Fragment>
-        ) : (
+        ) : caseKey === "carrion" ? (
           <React.Fragment>
             <div className="stagger-1">
               <SectionHead num="I" title="Paciente" sub="Datos demográficos" />
@@ -1301,6 +1380,27 @@
                 {' '}calculados de la fecha (columnas <b style={{ color: 'var(--cream-mute)' }}>ano</b> y{' '}
                 <b style={{ color: 'var(--cream-mute)' }}>semana</b> del dataset del MINSA).
               </div>
+            </div>
+          </React.Fragment>
+        ) : (
+          <React.Fragment>
+            <div className="stagger-1">
+              <SectionHead num="I" title="Síntomas del paciente" sub="Marque los que presenta" />
+              {SINTOMAS_CARRION.map((s) => (
+                <div key={s.key} style={{ display: 'flex', alignItems: 'center',
+                     justifyContent: 'space-between', gap: 14, padding: '11px 0',
+                     borderBottom: '1px solid var(--line-faint)' }}>
+                  <span style={{ fontSize: 14, color: 'var(--cream-mute)', flex: 1 }}>{s.label}</span>
+                  <div className="seg" role="radiogroup" style={{ width: 120, flexShrink: 0 }}>
+                    {[{ x: 0, l: 'No' }, { x: 1, l: 'Sí' }].map((o) => (
+                      <button key={o.x} type="button"
+                              aria-pressed={(v[s.key] ? 1 : 0) === o.x}
+                              onClick={() => set(s.key)(o.x)}
+                              style={{ padding: '9px 6px', fontSize: 15 }}>{o.l}</button>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           </React.Fragment>
         )}
@@ -1407,9 +1507,12 @@
     const confNN = nn.pred === 1 ? nn.prob : 1 - nn.prob;
     const confTree = tree.pred === 1 ? tree.prob : 1 - tree.prob;
 
-    const resumen = caseKey === "titanic"
-      ? `${input.sex === 1 ? 'Mujer' : 'Hombre'}, ${input.age} años · clase ${input.pclass} · £${input.fare}`
-      : `${input.sexo === 1 ? 'Mujer' : 'Hombre'}, ${input.edad} años · ${DEPARTAMENTOS[input.departamento]} · ${input.fecha} (sem. ${semanaEpi(input.fecha)})`;
+    const resumen =
+      caseKey === "titanic"
+        ? `${input.sex === 1 ? 'Mujer' : 'Hombre'}, ${input.age} años · clase ${input.pclass} · £${input.fare}`
+      : caseKey === "carrion"
+        ? `${input.sexo === 1 ? 'Mujer' : 'Hombre'}, ${input.edad} años · ${DEPARTAMENTOS[input.departamento]} · ${input.fecha} (sem. ${semanaEpi(input.fecha)})`
+        : `${SINTOMAS_CARRION.filter((s) => input[s.key]).length} de ${SINTOMAS_CARRION.length} síntomas marcados`;
 
     return (
       <div className="fade-in" style={{ display: 'grid', gap: 26 }}>
@@ -1515,9 +1618,11 @@
       setResult(null);
     }, [caseKey]);
 
-    // Tema de fondo por caso: el océano del Titanic se atenúa en Carrión.
+    // Tema de fondo por caso (Titanic náutico / Carrión andino / clínico).
     useEffect(() => {
-      document.body.classList.toggle("theme-carrion", caseKey === "carrion");
+      document.body.classList.remove("theme-carrion", "theme-clinico");
+      if (caseKey === "carrion") document.body.classList.add("theme-carrion");
+      else if (caseKey === "carrion_clinico") document.body.classList.add("theme-clinico");
     }, [caseKey]);
 
     const submit = async () => {
